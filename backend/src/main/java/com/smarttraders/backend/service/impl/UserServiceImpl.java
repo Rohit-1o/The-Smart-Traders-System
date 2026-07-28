@@ -1,0 +1,133 @@
+package com.smarttraders.backend.service.impl;
+
+import com.smarttraders.backend.dto.request.LoginRequest;
+import com.smarttraders.backend.dto.request.UpdateLocationRequest;
+import com.smarttraders.backend.dto.request.UserRegisterRequest;
+import com.smarttraders.backend.dto.response.LoginResponse;
+import com.smarttraders.backend.dto.response.NearbyTraderResponse;
+import com.smarttraders.backend.dto.response.UserResponse;
+import com.smarttraders.backend.entity.User;
+import com.smarttraders.backend.exception.DuplicateEmailException;
+import com.smarttraders.backend.exception.InvalidCredentialsException;
+import com.smarttraders.backend.exception.ResourceNotFoundException;
+import com.smarttraders.backend.repository.UserRepository;
+import com.smarttraders.backend.security.JwtUtil;
+import com.smarttraders.backend.service.UserService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import com.smarttraders.backend.dto.request.UpdateProfileRequest;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl implements UserService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
+
+    @Override
+    public UserResponse createUser(UserRegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateEmailException(request.getEmail());
+        }
+
+        User user = new User();
+        user.setFullName(request.getFullName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setPhoneNumber(request.getPhoneNumber());
+        user.setAddress(request.getAddress());
+        user.setRole(request.getRole());
+
+        User savedUser = userRepository.save(user);
+        return mapToResponse(savedUser);
+    }
+
+    @Override
+    public List<UserResponse> getAllUsers() {
+        return userRepository.findAll()
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public LoginResponse login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(InvalidCredentialsException::new);
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new InvalidCredentialsException();
+        }
+
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+
+        return new LoginResponse(
+                token,
+                user.getId(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole()
+        );
+    }
+
+    @Override
+public UserResponse updateLocation(UpdateLocationRequest request, String email) {
+    User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+
+    user.setLatitude(request.getLatitude());
+    user.setLongitude(request.getLongitude());
+
+    User updatedUser = userRepository.save(user);
+    return mapToResponse(updatedUser);
+}
+
+@Override
+public List<NearbyTraderResponse> getNearbyTraders(Double latitude, Double longitude, Double radiusKm) {
+    List<Object[]> results = userRepository.findNearbyTraders(latitude, longitude, radiusKm);
+
+    return results.stream().map(row -> new NearbyTraderResponse(
+            ((Number) row[0]).longValue(),      // id
+            (String) row[2],                     // full_name
+            (String) row[5],                     // phone_number
+            ((Number) row[7]).doubleValue(),     // latitude
+            ((Number) row[8]).doubleValue(),     // longitude
+            ((Number) row[row.length - 1]).doubleValue() // distance (last column)
+    )).toList();
+}
+
+@Override
+public UserResponse getMyProfile(String email) {
+    User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+    return mapToResponse(user);
+}
+
+@Override
+public UserResponse updateProfile(UpdateProfileRequest request, String email) {
+    User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+
+    user.setFullName(request.getFullName());
+    user.setPhoneNumber(request.getPhoneNumber());
+    user.setAddress(request.getAddress());
+
+    return mapToResponse(userRepository.save(user));
+}
+
+    private UserResponse mapToResponse(User user) {
+        return new UserResponse(
+                user.getId(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getPhoneNumber(),
+                user.getAddress(),
+                user.getRole(),
+                user.getCreatedAt()
+        );
+    }
+}
