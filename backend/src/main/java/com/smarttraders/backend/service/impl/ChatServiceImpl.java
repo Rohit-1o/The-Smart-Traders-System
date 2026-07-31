@@ -14,7 +14,8 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.memory.ChatMemory;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -24,12 +25,18 @@ public class ChatServiceImpl implements ChatService {
     private static final String SYSTEM_PROMPT = """
             You are an agricultural assistant for Smart Traders AI, a marketplace connecting
             farmers, traders, and vendors in India. You help users with crop information,
-            fair pricing guidance, and general farming/trading questions. Keep answers concise
-            and practical. If asked about specific live prices or platform data you don't have
-            access to, say so honestly rather than guessing.
+            fair pricing guidance based on current market trends, and general farming/trading questions.
+            When asked about prices, provide structured information including:
+              - Commodity name
+              - Typical price range (e.g., per quintal or per kg, depending on the commodity)
+              - Factors affecting price (seasonality, demand-supply, quality, location)
+              - Regional variations (if applicable)
+            Keep answers concise and practical. If asked about specific live prices or platform data you don't have
+            access to, say so honestly rather than guessing. Always clarify that prices are indicative and users
+            should check live market data for exact rates.
             """;
 
-    private final ChatLanguageModel chatLanguageModel;
+    private final ChatModel chatLanguageModel;
     private final ChatMemoryManager chatMemoryManager;
     private final ChatMessageRepository chatMessageRepository;
 
@@ -43,11 +50,12 @@ public class ChatServiceImpl implements ChatService {
         messagesWithSystemPrompt.add(SystemMessage.from(SYSTEM_PROMPT));
         messagesWithSystemPrompt.addAll(memory.messages());
 
-        AiMessage aiResponse = chatLanguageModel.generate(messagesWithSystemPrompt).content();
+        ChatResponse aiResponse = chatLanguageModel.chat(messagesWithSystemPrompt);
+        AiMessage aiMessage = aiResponse.aiMessage();
 
-        chatMemoryManager.addAiMessage(userEmail, aiResponse.text());
+        chatMemoryManager.addAiMessage(userEmail, aiMessage.text());
 
-        return aiResponse.text();
+        return aiMessage.text();
     }
 
     @Override
